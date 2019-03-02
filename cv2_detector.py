@@ -1,12 +1,9 @@
-import arrow
 import cv2
 import numpy as np
 
 from eyewitness.detection_utils import DetectionResult
 from eyewitness.config import BoundedBoxObject
-from eyewitness.image_id import ImageId
 from eyewitness.object_detector import ObjectDetector
-from eyewitness.image_utils import ImageHandler, Image
 
 
 class HogPersonDetectorWrapper(ObjectDetector):
@@ -54,8 +51,8 @@ class CascadeClassifierPersonWrapper(ObjectDetector):
         if self.resize is not None:
             frame = cv2.resize(frame, self.resize)
             ori_height, ori_width = frame.shape[:2]
-            x_scale_up_ratio = self.resize[0] / ori_width
-            y_scale_up_ratio = self.resize[1] / ori_height
+            x_scale_up_ratio = ori_width / self.resize[0]
+            y_scale_up_ratio = ori_height / self.resize[1]
         else:
             x_scale_up_ratio = 1
             y_scale_up_ratio = 1
@@ -68,10 +65,10 @@ class CascadeClassifierPersonWrapper(ObjectDetector):
         detected_objects = []
         for idx in picked_idx:
             x1, y1, x2, y2 = persons[idx]
-            x1 = x1 / x_scale_up_ratio
-            x2 = x2 / x_scale_up_ratio
-            y1 = y1 / y_scale_up_ratio
-            y2 = y2 / y_scale_up_ratio
+            x1 = x1 * x_scale_up_ratio
+            x2 = x2 * x_scale_up_ratio
+            y1 = y1 * y_scale_up_ratio
+            y2 = y2 * y_scale_up_ratio
             detected_objects.append(BoundedBoxObject(x1, y1, x2, y2, 'person', 0, ''))
 
         image_dict = {
@@ -85,6 +82,67 @@ class CascadeClassifierPersonWrapper(ObjectDetector):
     @property
     def valid_labels(self):
         return set(['person'])
+
+
+class MobileNetWrapper(ObjectDetector):
+    def __init__(self,
+                 threshold=0.7,
+                 prototxt='dnn/mobilenet-caffe/MobileNetSSD_deploy.prototxt',
+                 weights='dnn/mobilenet-caffe/MobileNetSSD_deploy.caffemodel'):
+        # the model were downloaded from: https://github.com/djmv/MobilNet_SSD_opencv
+        # wget https://raw.githubusercontent.com/djmv/MobilNet_SSD_opencv/master/MobileNetSSD_deploy.prototxt  # noqa
+        # wget https://github.com/djmv/MobilNet_SSD_opencv/raw/master/MobileNetSSD_deploy.caffemodel # noqa
+        # since the model is not larger than 100MB, thus commit into github
+        self.net = cv2.dnn.readNetFromCaffe(prototxt, weights)
+        self.resize = (300, 300)
+        self.threshold = threshold
+        # Labels of network.
+        self.classNames = {0: 'background', 1: 'aeroplane', 2: 'bicycle', 3: 'bird', 4: 'boat',
+                           5: 'bottle', 6: 'bus', 7: 'car', 8: 'cat', 9: 'chair',
+                           10: 'cow', 11: 'diningtable', 12: 'dog', 13: 'horse',
+                           14: 'motorbike', 15: 'person', 16: 'pottedplant',
+                           17: 'sheep', 18: 'sofa', 19: 'train', 20: 'tvmonitor'}
+
+    def detect(self, image_obj) -> DetectionResult:
+        frame = np.array(image_obj.pil_image_obj)
+        ori_height, ori_width = frame.shape[:2]
+        frame_resized = cv2.resize(frame, self.resize)
+        x_scale_up_ratio = ori_width / self.resize[0]
+        y_scale_up_ratio = ori_height / self.resize[1]
+
+        blob = cv2.dnn.blobFromImage(
+            frame_resized, 0.007843, (300, 300), (127.5, 127.5, 127.5), False)
+        # Set to network the input blob
+        self.net.setInput(blob)
+        # Prediction of network
+        detections = self.net.forward()
+
+        detected_objects = []
+        for i in range(detections.shape[2]):
+            confidence = detections[0, 0, i, 2]  # Confidence of prediction
+            if confidence < self.threshold:  # Filter prediction
+                continue
+
+            class_id = int(detections[0, 0, i, 1])  # Class label
+            label = self.classNames[class_id]
+            # Object location
+            x1 = int(detections[0, 0, i, 3] * self.resize[0] * x_scale_up_ratio)
+            y1 = int(detections[0, 0, i, 4] * self.resize[1] * y_scale_up_ratio)
+            x2 = int(detections[0, 0, i, 5] * self.resize[0] * x_scale_up_ratio)
+            y2 = int(detections[0, 0, i, 6] * self.resize[1] * y_scale_up_ratio)
+            detected_objects.append(BoundedBoxObject(x1, y1, x2, y2, label, confidence, ''))
+
+        image_dict = {
+            'image_id': image_obj.image_id,
+            'detected_objects': detected_objects,
+        }
+        detection_result = DetectionResult(image_dict)
+
+        return detection_result
+
+    @property
+    def valid_labels(self):
+        return set(self.classNames.values())
 
 
 def non_max_suppression(boxes, probs=None, overlapThresh=0.3):
@@ -145,6 +203,5 @@ def non_max_suppression(boxes, probs=None, overlapThresh=0.3):
         # delete all indexes from the index list that have overlap greater
         # than the provided overlap threshold
         idxs = np.delete(idxs, np.concatenate(([last],
-            np.where(overlap > overlapThresh)[0])))
+                         np.where(overlap > overlapThresh)[0])))
     return pick
-

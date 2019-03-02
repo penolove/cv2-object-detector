@@ -1,27 +1,25 @@
 import arrow
-import cv2
-import numpy as np
 
-from eyewitness.detection_utils import DetectionResult
-from eyewitness.config import BoundedBoxObject
 from eyewitness.image_id import ImageId
-from eyewitness.object_detector import ObjectDetector
 from eyewitness.image_utils import ImageHandler, Image
 
-from cv2_detector import CascadeClassifierPersonWrapper, HogPersonDetectorWrapper
+from cv2_detector import CascadeClassifierPersonWrapper, HogPersonDetectorWrapper, MobileNetWrapper
+
 
 def get_person_detector(model):
     if model == 'Cascade':
         detector = CascadeClassifierPersonWrapper()
     elif model == 'Hog':
-        detector = detector = CascadeClassifierPersonWrapper()()
+        detector = HogPersonDetectorWrapper()
+    elif model == 'MobileNet':
+        detector = MobileNetWrapper()
     else:
         raise Exception('not implement error')
     return detector
 
 
 if __name__ == '__main__':
-    object_detector = get_person_detector('Cascade')
+    object_detector = get_person_detector('MobileNet')
     raw_image_path = 'demo/test_image.jpg'
     image_id = ImageId(channel='demo', timestamp=arrow.now().timestamp, file_format='jpg')
     image_obj = Image(image_id, raw_image_path=raw_image_path)
