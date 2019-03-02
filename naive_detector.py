@@ -21,7 +21,7 @@ def get_person_detector(model):
 
 
 if __name__ == '__main__':
-    object_detector = get_person_detector()
+    object_detector = get_person_detector('Cascade')
     raw_image_path = 'demo/test_image.jpg'
     image_id = ImageId(channel='demo', timestamp=arrow.now().timestamp, file_format='jpg')
     image_obj = Image(image_id, raw_image_path=raw_image_path)
