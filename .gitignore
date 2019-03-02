@@ -1,2 +1,5 @@
 .vscode
 detected_image
+VOC2007
+VOCdevkit
+*.pyc
